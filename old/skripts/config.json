@@ -1,0 +1,6 @@
+{
+    "path_to_binary": "/usr/lib/klibc-s9qQdCstNfYRDSY0VN-k2cEOgUE.so",
+    "memory_functions": ["malloc", "calloc", "printf", "memcpy"],
+    "output_plot_path": "../plots/cg_after_algorithm_klibc",
+    "plot_format": "png"
+}

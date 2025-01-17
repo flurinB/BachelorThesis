@@ -8,11 +8,11 @@ import json
 """
 Global Variables:
 """
-
-GLOBAL_metric_map = {} # Maps {addr -> Metric value}
+GLOBAL_visited_map = []
+GLOBAL_metric_map = {}
 GLOBAL_root_list = []
-GLOBAL_project = None # The main project
-GLOBAL_temp_project = None # The temporary project for each of the emulated analyses from each root
+GLOBAL_project = None
+GLOBAL_temp_project = None
 GLOBAL_memory_functions = []
 
 def init_global_variables(path_to_binary, memory_functions):
@@ -24,6 +24,7 @@ def init_global_variables(path_to_binary, memory_functions):
 
     GLOBAL_memory_functions = memory_functions
 
+
 """
 Calculating the Metric Values: 
 """
@@ -32,14 +33,7 @@ def add_to_visited_map(function):
     global GLOBAL_visited_map
     GLOBAL_visited_map.append(function)
 
-def count_amount_of_functions_in_subgraph(root_addr, covered_functions=None):
-    """
-        Counts the amount of functions in the subgraph induced by root_addr
-        The parameter "covered_functions" is important for the reordering "Metric",
-        after one first fuzzing order has already been established.
-        In this case the function is used to count the amount of functions in the subgraph that are
-        not covered by root_addr before
-    """
+def count_amount_of_functions_in_subgraph(root_addr, memory_calls_hashmap):
     global GLOBAL_project, GLOBAL_memory_functions
 
     callgraph = GLOBAL_project.kb.functions.callgraph
@@ -58,12 +52,6 @@ def count_amount_of_functions_in_subgraph(root_addr, covered_functions=None):
         if func.name in GLOBAL_memory_functions:
             continue
 
-        # Skip the function if it is already covered in a previous subtree (FOR REORDERING)
-        if func.name in covered_functions:
-            continue
-        else:
-            covered_functions.append(current_func_addr)
-
         amount_of_functions = amount_of_functions + 1
 
         # Explore successors
@@ -71,7 +59,7 @@ def count_amount_of_functions_in_subgraph(root_addr, covered_functions=None):
             if succ_addr not in visited:
                 to_visit.append(succ_addr)
 
-    return (amount_of_functions, covered_functions)
+    return amount_of_functions
 
 def count_amount_metrics_for_root_functions():
     global GLOBAL_root_list
@@ -84,7 +72,7 @@ def count_amount_metrics_for_root_functions():
 
     for root_addr, root_func in root_list:
         amount_of_memory_calls = count_memory_calls_in_call_subtree(root_addr, memory_calls_hashmap)
-        amount_of_functions, _ = count_amount_of_functions_in_subgraph(root_addr)
+        amount_of_functions = count_amount_of_functions_in_subgraph(root_addr, memory_calls_hashmap)
         memory_call_counts[root_func.name] = amount_of_memory_calls
         function_counts[root_func.name] = amount_of_functions
 
@@ -180,23 +168,6 @@ def calculate_metric_values_for_choosing_entry_point_order(alpha, beta):
 
     return
 
-def reorder(order):
-    """
-        Reorders a given fuzzing-order according to how many functions have not yet been covered
-        by the subtrees of the graph induced by the root functions prior in the order
-    """
-
-    remaining_functions_metric = {}
-    covered_functions = []
-    for root_addr in order:
-        amount_of_remaining_functions, covered_functions = count_amount_of_functions_in_subgraph(root_addr, covered_functions)
-        remaining_functions_metric[root_addr] = amount_of_remaining_functions
-
-    # Sort the functions in descending order of not yet visited functions
-    new_order = dict(sorted(remaining_functions_metric.items(), key=lambda item: item[1], reverse=True))
-    new_order = list(new_order)
-
-    return new_order
 
 """
 Building the Call Graph: 
@@ -444,56 +415,43 @@ def save_fuzzing_order_to_file(sorted_function_map, output_file):
 if __name__ == '__main__':
     config = load_config("config.json")
 
-    use_gml_file = config.get("use_gml_file", False)
-    path_to_binary = config.get("path_to_binary", "")
-    path_to_gml_file = config.get("path_to_gml_file", "")
-    memory_functions = config.get("memory_functions", [])
-    output_plot_path = config.get("output_plot_path", "")
-    output_graph_path = config.get("output_graph_path", "")
-    plot_format = config.get("plot_format", "png")
+    path_to_binary =  config["path_to_binary"]
+    memory_functions = config["memory_functions"]
+    output_plot_path = config["output_plot_path"]
+    plot_format = config["plot_format"]
 
-    if use_gml_file:
-        # Load the graph from a .gml file
-        print(f"Loading call graph from {path_to_gml_file}")
-        callgraph = read_graph_from_file(path_to_gml_file)
-        GLOBAL_project = angr.Project(path_to_binary, auto_load_libs=False)
-        GLOBAL_project.kb.functions.callgraph = callgraph
+    init_global_variables(path_to_binary, memory_functions)
 
-        # Update root functions from the loaded graph
-        update_rootlist()
-        root_list, root_names = GLOBAL_root_list
-        print("Root functions loaded from .gml file:", root_names)
+    # Generate CFG & build knowledge base
+    cfg_fast = GLOBAL_project.analyses.CFGFast()
 
-    else:
-        # Normal binary analysis
-        init_global_variables(path_to_binary, memory_functions)
+    # Find root functions
+    update_rootlist()
+    root_list, root_names = GLOBAL_root_list
+    print("Root functions:", root_list)
+    print("Here the list of root functions before the algorithm: ", root_names)
 
-        # Generate CFG & build knowledge base
-        cfg_fast = GLOBAL_project.analyses.CFGFast()
+    # Analyze the program (adding missing edges, etc.)
+    analyze_program(cfg_fast)
 
-        # Find root functions
-        update_rootlist()
-        root_list, root_names = GLOBAL_root_list
-        print("Root functions before analysis:", root_names)
+    # Plot and output results
+    plot_cg(GLOBAL_project.kb, output_plot_path, format=plot_format)
 
-        # Analyze the program (adding missing edges, etc.)
-        analyze_program(cfg_fast)
+    # Show updated root list if it changed
+    update_rootlist()
+    root_list, root_names = GLOBAL_root_list
+    print("Here the list of root functions after the algorithm: ", root_names)
 
-        # Plot and output results
-        plot_cg(GLOBAL_project.kb, output_plot_path, format=plot_format)
+    # Save final callgraph to file
+    save_graph_to_file(GLOBAL_project.kb.functions.callgraph, 'IndirectCallGraph.gml')
 
-        # Show updated root list if it changed
-        update_rootlist()
-        root_list, root_names = GLOBAL_root_list
-        print("Root functions after analysis:", root_names)
+    calculate_metric_values_for_choosing_entry_point_order(1,1)
 
-        # Save final callgraph to file
-        save_graph_to_file(GLOBAL_project.kb.functions.callgraph, output_graph_path + ".gml")
-
-    # Calculate metrics and fuzzing order
-    calculate_metric_values_for_choosing_entry_point_order(1, 1)
     sorted_by_value_ascending = dict(sorted(GLOBAL_metric_map.items(), key=lambda item: item[1], reverse=True))
 
     keys_list = list(GLOBAL_metric_map.keys())
-    order = reorder(keys_list)
+
     save_fuzzing_order_to_file(sorted_by_value_ascending, "fuzzing_order.txt")
+
+
+
