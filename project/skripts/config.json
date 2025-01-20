@@ -4,6 +4,6 @@
     "output_plot_path": "../plots/cg_after_algorithm_libz",
     "output_graph_path": "libz_graph",
     "plot_format": "png",
-    "use_gmx_file": true,
-    "path_to_gmx_file": "libz_graph.gml"
+    "use_gml_file": true,
+    "path_to_gml_file": "libz_graph.gml"
 }

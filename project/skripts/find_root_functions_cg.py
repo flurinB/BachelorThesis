@@ -32,7 +32,7 @@ def add_to_visited_map(function):
     global GLOBAL_visited_map
     GLOBAL_visited_map.append(function)
 
-def count_amount_of_functions_in_subgraph(root_addr, covered_functions=None):
+def count_amount_of_functions_in_subgraph(root_addr, covered_functions=[]):
     """
         Counts the amount of functions in the subgraph induced by root_addr
         The parameter "covered_functions" is important for the reordering "Metric",
@@ -59,7 +59,7 @@ def count_amount_of_functions_in_subgraph(root_addr, covered_functions=None):
             continue
 
         # Skip the function if it is already covered in a previous subtree (FOR REORDERING)
-        if func.name in covered_functions:
+        if current_func_addr in covered_functions:
             continue
         else:
             covered_functions.append(current_func_addr)
@@ -220,7 +220,6 @@ def analyze_program(cfg_fast):
             # Create a blank state and build an emulated CFG starting from this function
             start_state = GLOBAL_temp_project.factory.blank_state(addr=func_addr)
             temp_cfg_emu = GLOBAL_temp_project.analyses.CFGEmulated(fail_fast=True, starts=[func_addr], initial_state=start_state)
-
 
             temp_cfg_edges_by_address = []
             for src_node, dst_node, edge_data in temp_cfg_emu.graph.edges(data=True):
@@ -415,9 +414,16 @@ def save_graph_to_file(graph, path_to_file):
 
 def read_graph_from_file(path_to_file):
     """
-    Reads a GML file into a NetworkX graph.
+    Reads a GML file into a NetworkX graph, converting node labels from hex strings to int.
     """
     graph = nx.read_gml(path_to_file)
+    mapping = {}
+    for node in graph.nodes():
+        if isinstance(node, str) and node.startswith("0x"):
+            mapping[node] = int(node, 16)
+
+    if mapping:
+        nx.relabel_nodes(graph, mapping, copy=False)
     return graph
 
 
@@ -458,6 +464,8 @@ if __name__ == '__main__':
         callgraph = read_graph_from_file(path_to_gml_file)
         GLOBAL_project = angr.Project(path_to_binary, auto_load_libs=False)
         GLOBAL_project.kb.functions.callgraph = callgraph
+        # analyse the project for a complete knowledge base:
+        _ = GLOBAL_project.analyses.CFGFast()
 
         # Update root functions from the loaded graph
         update_rootlist()
@@ -494,6 +502,8 @@ if __name__ == '__main__':
     calculate_metric_values_for_choosing_entry_point_order(1, 1)
     sorted_by_value_ascending = dict(sorted(GLOBAL_metric_map.items(), key=lambda item: item[1], reverse=True))
 
-    keys_list = list(GLOBAL_metric_map.keys())
+    root_list, _ = GLOBAL_root_list
+    keys_list = [f.addr for f in GLOBAL_metric_map.keys()]
     order = reorder(keys_list)
     save_fuzzing_order_to_file(sorted_by_value_ascending, "fuzzing_order.txt")
+

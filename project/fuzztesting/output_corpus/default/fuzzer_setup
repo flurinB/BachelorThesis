@@ -1,0 +1,7 @@
+# environment variables:
+AFL_CUSTOM_INFO_PROGRAM=./fuzz_zlib
+AFL_CUSTOM_INFO_PROGRAM_ARGV=@@
+AFL_CUSTOM_INFO_OUT=output_corpus/default
+AFL_PATH=/home/flurin/libraries/AFLplusplus/frida_mode/build/obj
+# command line:
+'afl-fuzz' '-i' 'input_corpus' '-o' 'output_corpus' '--' './fuzz_zlib' '@@'

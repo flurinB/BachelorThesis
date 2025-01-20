@@ -1,0 +1,7 @@
+# environment variables:
+AFL_CUSTOM_INFO_PROGRAM=/home/flurin/project/fuzztesting/klibc-s9qQdCstNfYRDSY0VN-k2cEOgUE.so
+AFL_CUSTOM_INFO_PROGRAM_ARGV=@@
+AFL_CUSTOM_INFO_OUT=/home/flurin/project/fuzztesting/fuzzing_output/default
+AFL_ENTRYPOINT=0x2074c2
+# command line:
+'afl-fuzz' '-Q' '-i' '/home/flurin/project/fuzztesting/input_corpus/' '-o' '/home/flurin/project/fuzztesting/fuzzing_output' '--' '/home/flurin/project/fuzztesting/klibc-s9qQdCstNfYRDSY0VN-k2cEOgUE.so' '@@'
